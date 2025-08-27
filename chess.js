@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         kwy Chess Bot
+// @name         kwy Chess Bot (Pay/Stripe UI & Adaptive Depth)
 // @namespace    http://tampermonkey.net/
-// @version      1.3
-// @description  LiquidGlass is a chess bot using Stockfish to suggest and optionally auto-play moves on Chess.com. Improved UI, glassmorphic design, and fixed auto-play so it only plays for the side you're playing (no dual-side play). Drag to move the panel. Ctrl+B to toggle.
+// @version      1.4
+// @description  Chess.com assistant: clean PayPal/Stripe-like UI, adaptive engine depth (reduces if engine rejects), and safe auto-play only for your side. Drag panel, Ctrl+B to toggle.
 // @author       kwy
 // @match        https://www.chess.com/play/*
 // @match        https://www.chess.com/game/*
@@ -14,116 +14,201 @@
 (function () {
   'use strict';
 
-  // Delay startup so chess.com has time to initialize
-  setTimeout(initLiquidGlass, 2200);
+  // Start after a short delay so chess.com initializes
+  setTimeout(initBot, 1800);
 
-  function initLiquidGlass() {
+  function initBot() {
     try {
       createUI();
       hookBot();
-      console.log('LiquidGlass loaded');
-      alert('LiquidGlass Loaded!');
+      console.log('kwy Chess Bot loaded');
+      // Use a subtle console message instead of alert to avoid annoyance
     } catch (e) {
-      console.error('LiquidGlass init error', e);
+      console.error('kwy init error', e);
     }
   }
 
-  // ------------------ UI ------------------
+  // ---------- UI (Pay/Stripe inspired, clean flat design) ----------
   function createUI() {
-    if (document.getElementById('liquidGlassBot')) return;
+    if (document.getElementById('kwyChessBot')) return;
 
     const wrap = document.createElement('div');
-    wrap.id = 'liquidGlassBot';
+    wrap.id = 'kwyChessBot';
     wrap.innerHTML = `
-      <div id="lg-header">
-        <div id="lg-title">kwy404</div>
-        <div id="lg-controls">
-          <button id="lg-toggle">Hide</button>
+      <div id="kwy-header">
+        <div id="kwy-brand">
+          <div id="kwy-logo">kwy</div>
+          <div id="kwy-title">Smart Assist</div>
+        </div>
+        <div id="kwy-actions">
+          <button id="kwy-toggle">Hide</button>
         </div>
       </div>
-      <div id="lg-body">
-        <div class="lg-row"><label>Enable Bot</label><input id="lg-enable" type="checkbox"></div>
-        <div class="lg-row"><label>Auto Move</label><input id="lg-auto" type="checkbox"></div>
-        <div class="lg-row"><label>Bot Power (depth)</label><input id="lg-depth" type="range" min="6" max="24" value="12"></div>
-        <div class="lg-row"><label>Auto Move Speed</label><input id="lg-speed" type="range" min="1" max="8" value="4"></div>
-        <div class="lg-row"><label>Update Interval</label><input id="lg-update" type="range" min="2" max="12" value="8"></div>
-        <div class="lg-info">
-          <div>Player: <span id="lg-player">-</span></div>
-          <div>Side to Move: <span id="lg-side">-</span></div>
-          <div>Evaluation: <span id="lg-eval">-</span></div>
-          <div>Best Move: <span id="lg-best">-</span></div>
+
+      <div id="kwy-body">
+        <div class="kwy-row">
+          <label class="kwy-label">Enable Bot</label>
+          <input id="kwy-enable" type="checkbox" />
         </div>
+
+        <div class="kwy-row">
+          <label class="kwy-label">Auto Move</label>
+          <input id="kwy-auto" type="checkbox" />
+        </div>
+
+        <div class="kwy-row">
+          <label class="kwy-label">Requested Depth</label>
+          <input id="kwy-depth" type="range" min="6" max="28" value="12" />
+          <div id="kwy-depthVal">12</div>
+        </div>
+
+        <div class="kwy-row">
+          <label class="kwy-label">Auto Move Speed</label>
+          <input id="kwy-speed" type="range" min="1" max="8" value="4" />
+        </div>
+
+        <div class="kwy-row">
+          <label class="kwy-label">Update Interval</label>
+          <input id="kwy-update" type="range" min="2" max="12" value="8" />
+        </div>
+
+        <div id="kwy-infoCard">
+          <div class="kwy-infoRow"><span class="kwy-infoLabel">Player</span><span id="kwy-player">-</span></div>
+          <div class="kwy-infoRow"><span class="kwy-infoLabel">Side to Move</span><span id="kwy-side">-</span></div>
+          <div class="kwy-infoRow"><span class="kwy-infoLabel">Evaluation</span><span id="kwy-eval">-</span></div>
+          <div class="kwy-infoRow"><span class="kwy-infoLabel">Best Move</span><span id="kwy-best">-</span></div>
+          <div class="kwy-infoRow"><span class="kwy-infoLabel">Depth (used)</span><span id="kwy-depthUsed">-</span></div>
+        </div>
+
+        <div style="margin-top:10px; font-size:12px; color:#2e3a59">Tip: Ctrl+B to show/hide. Auto move only plays for your color.</div>
       </div>
     `;
 
     const style = document.createElement('style');
     style.textContent = `
-      #liquidGlassBot{
-        position: absolute; top: 80px; left: 90px; width: 360px; z-index: 1000000; font-family: Inter, system-ui, monospace; user-select: none;
-        border-radius: 14px; overflow: hidden; backdrop-filter: blur(8px) saturate(140%);
-        background: linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
-        border: 1px solid rgba(255,255,255,0.06); box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+      /* Container */
+      #kwyChessBot {
+        position: absolute;
+        top: 70px;
+        left: 80px;
+        width: 340px;
+        z-index: 1000000;
+        font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+        user-select: none;
+        border-radius: 12px;
+        box-shadow: 0 6px 20px rgba(34, 60, 80, 0.18);
+        background: #ffffff;
+        border: 1px solid #e6eefc;
+        color: #1f3550;
+        overflow: hidden;
       }
-      #lg-header{ display:flex; align-items:center; justify-content:space-between; padding:10px 12px; cursor:grab; }
-      #lg-title{ font-weight:600; color:#e9f0ff; font-size:16px; }
-      #lg-controls button{ padding:6px 8px; border-radius:8px; border:none; background:rgba(255,255,255,0.06); color:#e9f0ff; cursor:pointer }
-      #lg-body{ padding:12px; color:#dfe7ff }
-      .lg-row{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px }
-      .lg-row label{ flex:1 }
-      .lg-row input[type=range]{ flex:1; margin-left:10px }
-      .lg-row input[type=checkbox]{ transform:scale(1.15); margin-left:8px }
-      .lg-info{ margin-top:8px; font-size:13px; display:grid; grid-template-columns:1fr 1fr; gap:6px }
-      .lg-info div{ background:rgba(0,0,0,0.15); padding:8px; border-radius:8px; }
+
+      /* Header - Pay/Stripe lightweight brand */
+      #kwy-header {
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        padding:12px;
+        background: linear-gradient(90deg, #f7fbff, #f1f6ff);
+        border-bottom: 1px solid #e6eefc;
+        cursor: grab;
+      }
+      #kwy-brand { display:flex; align-items:center; gap:10px; }
+      #kwy-logo {
+        width:36px; height:36px; border-radius:8px;
+        background: linear-gradient(180deg,#0070f3,#0057d9);
+        color:white; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:16px;
+        box-shadow: 0 3px 8px rgba(3,102,214,0.18);
+      }
+      #kwy-title { font-weight:600; color:#0b2540; font-size:15px; }
+      #kwy-actions button {
+        background: #0070f3; color: white; border: none; border-radius:8px; padding:6px 10px; cursor:pointer; font-weight:600;
+        box-shadow: 0 4px 12px rgba(3,102,214,0.14);
+      }
+      #kwy-actions button:active { transform: translateY(1px); }
+
+      /* Body */
+      #kwy-body { padding:12px; }
+      .kwy-row { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+      .kwy-label { width:120px; color:#203049; font-size:13px; }
+      #kwy-depthVal { min-width:30px; text-align:center; color:#203049; font-weight:700; }
+      input[type="range"] { flex:1; }
+      input[type="checkbox"] { transform: scale(1.1); }
+
+      /* Info card */
+      #kwy-infoCard {
+        margin-top:10px;
+        border-radius:8px;
+        padding:10px;
+        background: linear-gradient(180deg,#fbfdff,#f5f9ff);
+        border:1px solid #e6eefc;
+      }
+      .kwy-infoRow { display:flex; justify-content:space-between; padding:6px 2px; font-size:13px; color:#0b2540; }
+      .kwy-infoLabel { color:#6b7c9a; }
+
+      /* Small responsive */
+      @media (max-width:720px) {
+        #kwyChessBot { left:10px; top:80px; width:300px; }
+      }
     `;
 
     document.body.appendChild(style);
     document.body.appendChild(wrap);
 
-    // append content after style so innerHTML is parsed
-    const container = document.getElementById('liquidGlassBot');
+    // make it draggable
+    const container = document.getElementById('kwyChessBot');
     container.addEventListener('mousedown', startDrag);
 
-    // controls
-    const btnToggle = container.querySelector('#lg-toggle');
+    // Toggle hide/show
+    const btnToggle = container.querySelector('#kwy-toggle');
     btnToggle.addEventListener('click', () => {
-      const body = container.querySelector('#lg-body');
+      const body = container.querySelector('#kwy-body');
       const hidden = body.style.display === 'none';
       body.style.display = hidden ? 'block' : 'none';
       btnToggle.textContent = hidden ? 'Hide' : 'Show';
     });
 
-    // keyboard ctrl+b
+    // Ctrl+B shortcut
     document.addEventListener('keyup', (e) => {
       if (e.key.toLowerCase() === 'b' && e.ctrlKey) {
         container.style.display = container.style.display === 'none' ? 'block' : 'none';
       }
     });
 
-    // expose controls to window for bot code
-    window.LGB = {
-      enableEl: container.querySelector('#lg-enable'),
-      autoEl: container.querySelector('#lg-auto'),
-      depthEl: container.querySelector('#lg-depth'),
-      speedEl: container.querySelector('#lg-speed'),
-      updateEl: container.querySelector('#lg-update'),
-      playerEl: container.querySelector('#lg-player'),
-      sideEl: container.querySelector('#lg-side'),
-      evalEl: container.querySelector('#lg-eval'),
-      bestEl: container.querySelector('#lg-best')
+    // expose controls
+    window.KWY = {
+      enableEl: container.querySelector('#kwy-enable'),
+      autoEl: container.querySelector('#kwy-auto'),
+      depthEl: container.querySelector('#ky-depth') || container.querySelector('#kwy-depth'),
+      speedEl: container.querySelector('#kwy-speed'),
+      updateEl: container.querySelector('#kwy-update'),
+      playerEl: container.querySelector('#kwy-player'),
+      sideEl: container.querySelector('#kwy-side'),
+      evalEl: container.querySelector('#kwy-eval'),
+      bestEl: container.querySelector('#kwy-best'),
+      depthValEl: container.querySelector('#kwy-depthVal'),
+      depthUsedEl: container.querySelector('#kwy-depthUsed')
     };
 
-    // initial states
-    window.LGB.enableEl.checked = false;
-    window.LGB.autoEl.checked = false;
+    // initialize values and events
+    const depthSlider = document.getElementById('kwy-depth');
+    const depthVal = document.getElementById('kwy-depthVal');
+    depthVal.textContent = depthSlider.value;
+    depthSlider.addEventListener('input', () => {
+      depthVal.textContent = depthSlider.value;
+    });
+
+    // ensure defaults
+    if (window.KWY && window.KWY.enableEl) window.KWY.enableEl.checked = false;
+    if (window.KWY && window.KWY.autoEl) window.KWY.autoEl.checked = false;
   }
 
-  // simple drag implementation
-  let dragOffset = { x: 0, y: 0 }, dragging = false;
+  // ---------- Drag helpers ----------
+  let dragging = false, dragOffset = {x:0,y:0};
   function startDrag(e) {
-    const root = document.getElementById('liquidGlassBot');
+    const root = document.getElementById('kwyChessBot');
     if (!root) return;
-    // only start drag if header area clicked
-    const header = root.querySelector('#lg-header');
+    const header = root.querySelector('#kwy-header');
     if (!header.contains(e.target)) return;
     dragging = true;
     dragOffset.x = e.clientX - root.offsetLeft;
@@ -133,7 +218,7 @@
   }
   function onDrag(e) {
     if (!dragging) return;
-    const root = document.getElementById('liquidGlassBot');
+    const root = document.getElementById('kwyChessBot');
     root.style.left = (e.clientX - dragOffset.x) + 'px';
     root.style.top = (e.clientY - dragOffset.y) + 'px';
   }
@@ -143,199 +228,129 @@
     document.removeEventListener('mouseup', endDrag);
   }
 
-  // ------------------ Bot Logic ------------------
+  // ---------- Bot core ----------
   function hookBot() {
-    // drawing canvas overlay for move suggestion
-    function getBoardElement() {
+    function getBoard() {
       return document.querySelector('.board') || document.querySelector('[data-cy="board"]') || null;
     }
 
-    const board = getBoardElement();
+    const board = getBoard();
     if (!board) {
-      console.warn('LiquidGlass: chess.com board not found yet. Will retry.');
-      setTimeout(hookBot, 1800);
+      console.warn('kwy: board not found, retrying...');
+      setTimeout(hookBot, 1500);
       return;
     }
 
+    // overlay canvas
     const canvas = document.createElement('canvas');
     canvas.style.position = 'absolute';
-    canvas.style.top = 0; canvas.style.left = 0; canvas.style.pointerEvents = 'none';
+    canvas.style.top = 0; canvas.style.left = 0;
+    canvas.style.pointerEvents = 'none';
     canvas.width = board.clientWidth; canvas.height = board.clientHeight;
     board.appendChild(canvas);
     const ctx = canvas.getContext('2d');
-
-    // keep canvas sized to board
     new ResizeObserver(() => {
       canvas.width = board.clientWidth; canvas.height = board.clientHeight;
     }).observe(board);
 
     // state
-    window.LGState = {
+    window.KWYState = {
       bestMove: null,
       evaluation: null,
       lastFEN: null,
-      running: true
+      running: true,
+      depthInUse: null
     };
 
-    async function updateCycle() {
+    // main loop
+    async function cycle() {
       try {
-        const enable = window.LGB && window.LGB.enableEl && window.LGB.enableEl.checked;
-        if (!enable) {
+        const enabled = window.KWY && window.KWY.enableEl && window.KWY.enableEl.checked;
+        if (!enabled) {
           clearCanvas();
-          setTimeout(updateCycle, 1000);
+          setTimeout(cycle, 1000);
           return;
         }
 
-        // attempt to get game instance from board
-        const game = board.game || (board.__vue__ && board.__vue__.game) || null; // try few possibilities
-        if (!game || typeof game.getFEN !== 'function') {
-          // fallback: try to find a global game object on the page
-          const globalGame = window.game || window.chessGame || null;
-          if (globalGame && typeof globalGame.getFEN === 'function') {
-            runWithGame(globalGame);
-          } else {
-            // can't find API; wait and retry
-            setTimeout(updateCycle, 1200);
-          }
+        // find game object (several heuristics)
+        const game = board.game || (board.__vue__ && board.__vue__.game) || window.game || window.chessGame || null;
+        if (!game || typeof safe(() => game.getFEN) !== 'function') {
+          setTimeout(cycle, 1200);
           return;
         }
 
-        runWithGame(game);
-      } catch (err) {
-        console.error('LiquidGlass updateCycle error', err);
-        setTimeout(updateCycle, 1200);
-      }
-    }
-
-    function runWithGame(game) {
-      try {
         const fen = safe(() => game.getFEN()) || null;
-        if (!fen) return setTimeout(updateCycle, 1000);
+        if (!fen) return setTimeout(cycle, 1000);
 
-        // update displayed player and side
-        const playingAs = safe(() => game.getPlayingAs()); // 1 for white in original script
+        const playingAs = safe(() => game.getPlayingAs());
         const isUserWhite = (playingAs === 1 || playingAs === 'white' || playingAs === 'w');
-        const activeColor = fen.split(' ')[1] || 'w'; // 'w' or 'b'
+        const activeColor = fen.split(' ')[1] || 'w';
         const sideToMove = activeColor === 'w' ? 'white' : 'black';
-        if (window.LGB && window.LGB.playerEl) window.LGB.playerEl.textContent = isUserWhite ? 'White' : 'Black';
-        if (window.LGB && window.LGB.sideEl) window.LGB.sideEl.textContent = sideToMove;
 
-        // remember last FEN
-        window.LGState.lastFEN = fen;
+        // update UI
+        if (window.KWY && window.KWY.playerEl) window.KWY.playerEl.textContent = isUserWhite ? 'White' : 'Black';
+        if (window.KWY && window.KWY.sideEl) window.KWY.sideEl.textContent = sideToMove;
 
-        // query engine only if different position or on interval
-        const depth = parseInt(window.LGB.depthEl.value || 12, 10);
-        const updateInterval = Math.max(2, 13 - parseInt(window.LGB.updateEl.value || 8, 10)); // smaller value = faster
+        // requested depth
+        const requestedDepth = parseInt((window.KWY && window.KWY.depthEl && window.KWY.depthEl.value) || 12, 10);
 
-        // call engine API
-        fetchBestMove(fen, depth).then(data => {
-          if (!data) return;
-          window.LGState.bestMove = normalizeBestmove(data.bestmove || data.move || '');
-          window.LGState.evaluation = data.evaluation || data.eval || data.score || null;
-          // update UI fields
-          if (window.LGB && window.LGB.evalEl) window.LGB.evalEl.textContent = formatEval(window.LGState.evaluation);
-          if (window.LGB && window.LGB.bestEl) window.LGB.bestEl.textContent = window.LGState.bestMove || '-';
-          drawSuggestion(window.LGState.bestMove, isUserWhite, canvas, ctx, game);
+        // adaptive fetch - try requested depth, if API fails reduce depth progressively
+        const effective = await fetchBestMoveAdaptive(fen, requestedDepth);
+        if (!effective) {
+          // engine failed entirely
+          setTimeout(cycle, 1200);
+          return;
+        }
 
-          // Auto-play logic: only auto-play if:
-          // 1) Auto Move checked
-          // 2) The side to move matches the side the user is playing
-          // 3) There is a legal matching move
-          const auto = window.LGB && window.LGB.autoEl && window.LGB.autoEl.checked;
-          const userColor = isUserWhite ? 'w' : 'b';
-          if (auto && userColor === activeColor && window.LGState.bestMove) {
-            attemptAutoPlay(game, window.LGState.bestMove);
-          }
-        }).catch(err => console.error('fetchBestMove error', err));
+        window.KWYState.bestMove = normalizeMove(effective.bestmove || effective.move || '');
+        window.KWYState.evaluation = effective.evaluation || effective.eval || effective.score || null;
+        window.KWYState.depthInUse = effective.depthUsed || effective.depth || requestedDepth;
 
-        setTimeout(updateCycle, updateInterval * 750);
-      } catch (e) {
-        console.error('runWithGame error', e);
-        setTimeout(updateCycle, 1200);
+        // update UI values
+        if (window.KWY && window.KWY.evalEl) window.KWY.evalEl.textContent = formatEval(window.KWYState.evaluation);
+        if (window.KWY && window.KWY.bestEl) window.KWY.bestEl.textContent = window.KWYState.bestMove || '-';
+        if (window.KWY && window.KWY.depthUsedEl) window.KWY.depthUsedEl.textContent = window.KWYState.depthInUse;
+
+        // draw suggestion (only on board)
+        drawSuggestion(window.KWYState.bestMove, isUserWhite, canvas, ctx, game);
+
+        // attempt auto-play only if:
+        // - Auto enabled
+        // - It's the user's color to move
+        // - Best move legal
+        const auto = window.KWY && window.KWY.autoEl && window.KWY.autoEl.checked;
+        const userColor = isUserWhite ? 'w' : 'b';
+        if (auto && userColor === activeColor && window.KWYState.bestMove) {
+          attemptAutoPlay(game, window.KWYState.bestMove);
+        }
+
+        // schedule next cycle (update slider smaller -> faster)
+        const uiInterval = Math.max(2, 13 - parseInt((window.KWY && window.KWY.updateEl && window.KWY.updateEl.value) || 8, 10));
+        setTimeout(cycle, uiInterval * 700);
+      } catch (err) {
+        console.error('kwy cycle error', err);
+        setTimeout(cycle, 1200);
       }
-    }
+    } // end cycle
 
-    updateCycle();
+    cycle();
 
-    // helper: safely call fn
+    // ---------- helpers ----------
+
+    // safe call wrapper
     function safe(fn) { try { return fn(); } catch (e) { return null; } }
 
-    // normalize bestmove string (accepts "bestmove e2e4" or "e2e4")
-    function normalizeBestmove(raw) {
+    // Normalize moves like "bestmove e2e4" or "e2e4"
+    function normalizeMove(raw) {
       if (!raw) return null;
       raw = String(raw).trim();
       if (raw.indexOf(' ') >= 0) raw = raw.split(' ')[1];
-      // remove possible trailing chars
       raw = raw.replace(/[^a-h1-8]/g, '');
       if (raw.length < 4) return null;
       return raw.substr(0,4);
     }
 
-    // fetch best move from Stockfish API (or fallback to simple local evaluation if desired)
-    async function fetchBestMove(fen, depth) {
-      try {
-        // example public endpoint used by original script
-        const url = `https://stockfish.online/api/s/v2.php?fen=${encodeURIComponent(fen)}&depth=${encodeURIComponent(depth)}`;
-        const res = await fetch(url, { method: 'GET' });
-        if (!res.ok) throw new Error('engine responded ' + res.status);
-        const data = await res.json();
-        return data;
-      } catch (e) {
-        console.warn('Stockfish API failed, returning null', e);
-        return null;
-      }
-    }
-
-    // attempt to auto-play the best move, ensure it's legal and only on user's turn
-    function attemptAutoPlay(game, bestmove) {
-      try {
-        if (!bestmove) return;
-        // bestmove is like e2e4
-        const from = bestmove.slice(0,2);
-        const to = bestmove.slice(2,4);
-        const legalMoves = safe(() => game.getLegalMoves()) || [];
-        const match = legalMoves.find(m => (m.from === from && m.to === to) || (m.san && m.san.includes(from) && m.san.includes(to)));
-        if (!match) return; // not legal here
-
-        // ensure it's user's turn by checking FEN active color again
-        const fen = safe(() => game.getFEN()) || '';
-        const active = (fen.split(' ')[1] || 'w');
-        const playingAs = safe(() => game.getPlayingAs());
-        const isUserWhite = (playingAs === 1 || playingAs === 'white' || playingAs === 'w');
-        if ((isUserWhite && active !== 'w') || (!isUserWhite && active !== 'b')) return; // not user's turn
-
-        // perform the move after a small delay based on speed setting
-        const speed = parseInt(window.LGB.speedEl.value || 4, 10);
-        const delay = Math.max(300, 1500 - speed * 150);
-        setTimeout(() => {
-          try {
-            // use game's move API; set animate false and userGenerated true if supported
-            if (typeof game.move === 'function') {
-              game.move({ ...match, promotion: match.promotion || false, animate: false, userGenerated: true });
-            } else if (typeof match.move === 'function') {
-              match.move();
-            } else {
-              // fallback: attempt to click source and target squares (best effort)
-              clickSquare(from);
-              setTimeout(() => clickSquare(to), 120);
-            }
-          } catch (e) { console.error('Auto-play error', e); }
-        }, delay);
-      } catch (e) { console.error('attemptAutoPlay error', e); }
-    }
-
-    // best-effort click square (for fallback when game.move isn't available)
-    function clickSquare(coord) {
-      try {
-        // squares on chess.com often have data-square attribute like data-square="e2"
-        const sq = board.querySelector(`[data-square="${coord}"]`) || board.querySelector(`.square-${coord}`) || null;
-        if (!sq) return;
-        sq.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-        sq.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-        sq.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      } catch (e) { /* ignore */ }
-    }
-
+    // Format evaluation object/number
     function formatEval(val) {
       if (val === null || val === undefined) return '-';
       if (typeof val === 'object') {
@@ -346,18 +361,70 @@
       return String(val);
     }
 
-    // draw suggestion arrow
+    // Attempt auto-play, verifying legal moves and user's turn
+    function attemptAutoPlay(game, bestmove) {
+      try {
+        if (!bestmove) return;
+        const from = bestmove.slice(0,2);
+        const to = bestmove.slice(2,4);
+        const legalMoves = safe(() => game.getLegalMoves()) || [];
+        const match = legalMoves.find(m => (m.from === from && m.to === to) || (m.san && m.san.includes(from) && m.san.includes(to)));
+        if (!match) return; // not legal
+
+        // ensure it's still user's turn
+        const fen = safe(() => game.getFEN()) || '';
+        const active = (fen.split(' ')[1] || 'w');
+        const playingAs = safe(() => game.getPlayingAs());
+        const isUserWhite = (playingAs === 1 || playingAs === 'white' || playingAs === 'w');
+        if ((isUserWhite && active !== 'w') || (!isUserWhite && active !== 'b')) return;
+
+        // schedule move using speed slider (higher speed -> smaller delay)
+        const speed = parseInt((window.KWY && window.KWY.speedEl && window.KWY.speedEl.value) || 4, 10);
+        const delay = Math.max(220, 1500 - speed * 150);
+
+        setTimeout(() => {
+          try {
+            if (typeof game.move === 'function') {
+              game.move({ ...match, promotion: match.promotion || false, animate: false, userGenerated: true });
+            } else if (typeof match.move === 'function') {
+              match.move();
+            } else {
+              // fallback to clicking squares
+              clickSquare(from);
+              setTimeout(() => clickSquare(to), 140);
+            }
+          } catch (e) {
+            console.error('kwy auto-play error', e);
+          }
+        }, delay);
+      } catch (e) {
+        console.error('kwy attemptAutoPlay error', e);
+      }
+    }
+
+    // best-effort click square fallback
+    function clickSquare(coord) {
+      try {
+        const sq = board.querySelector(`[data-square="${coord}"]`) || board.querySelector(`.square-${coord}`) || null;
+        if (!sq) return;
+        sq.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        sq.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        sq.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      } catch (e) { /* ignore */ }
+    }
+
+    // Draw suggestion arrow and dot
     function drawSuggestion(bestmove, isUserWhite, canvas, ctx, game) {
       clearCanvas();
       if (!bestmove) return;
-      // compute coordinates
       const letters = ['a','b','c','d','e','f','g','h'];
       const tile = canvas.clientWidth / 8;
       const x1 = letters.indexOf(bestmove[0]);
       const y1 = 8 - Number(bestmove[1]);
       const x2 = letters.indexOf(bestmove[2]);
       const y2 = 8 - Number(bestmove[3]);
-      // rotate if board is flipped for black player
+
+      // determine flip using actual board orientation (playingAs)
       const playingAs = safe(() => game.getPlayingAs());
       const userWhite = (playingAs === 1 || playingAs === 'white' || playingAs === 'w');
       const flipped = !userWhite;
@@ -368,19 +435,76 @@
       ctx.moveTo(toCanvasX(x1), toCanvasY(y1));
       ctx.lineTo(toCanvasX(x2), toCanvasY(y2));
       ctx.lineWidth = Math.max(6, tile/6);
-      ctx.strokeStyle = 'rgba(0,255,128,0.45)';
+      ctx.strokeStyle = 'rgba(2,112,255,0.95)'; // Pay/Stripe blue accent
       ctx.lineCap = 'round';
       ctx.stroke();
 
-      // dot at target
+      // endpoint circle
       ctx.beginPath();
       ctx.arc(toCanvasX(x2), toCanvasY(y2), Math.max(6, tile/8), 0, Math.PI*2);
-      ctx.fillStyle = 'rgba(0,255,128,0.35)';
+      ctx.fillStyle = 'rgba(2,112,255,0.18)';
       ctx.fill();
     }
 
     function clearCanvas() {
       ctx.clearRect(0,0,canvas.width,canvas.height);
     }
-  }
+
+    // Adaptive fetch: attempt requested depth, if engine returns error reduce depth until success or minDepth
+    async function fetchBestMoveAdaptive(fen, requestedDepth) {
+      const minDepth = 6;
+      const step = 2; // reduce by 2 each attempt to converge faster
+
+      // clamp requestedDepth to reasonable bounds (UI max is 28)
+      let depth = Math.max(minDepth, Math.min(28, parseInt(requestedDepth || 12, 10)));
+
+      // try descending depths until success or minimum reached
+      while (depth >= minDepth) {
+        try {
+          const res = await fetchBestMove(fen, depth);
+          if (!res) {
+            // treat as failure -> try lower depth
+            depth -= step;
+            continue;
+          }
+
+          // some APIs include explicit error fields or status - check common patterns
+          if (res.error || res.status === 'error' || res.code >= 400) {
+            // API signalled error (maybe depth too large)
+            depth -= step;
+            continue;
+          }
+
+          // success: attach depthUsed info for display
+          res.depthUsed = depth;
+          return res;
+        } catch (e) {
+          // network or parsing error -> try lower depth
+          depth -= step;
+        }
+      }
+
+      // failed to get any usable response
+      return null;
+    }
+
+    // fetch from public Stockfish endpoint (originally used)
+    async function fetchBestMove(fen, depth) {
+      try {
+        const url = `https://stockfish.online/api/s/v2.php?fen=${encodeURIComponent(fen)}&depth=${encodeURIComponent(depth)}`;
+        const r = await fetch(url, { method: 'GET' });
+        if (!r.ok) {
+          // non-2xx status -> return an object signaling error
+          return { error: true, code: r.status };
+        }
+        const data = await r.json();
+        return data;
+      } catch (e) {
+        console.warn('kwy fetchBestMove network error', e);
+        return null;
+      }
+    }
+
+  } // end hookBot
+
 })();
