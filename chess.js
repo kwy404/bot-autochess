@@ -596,35 +596,37 @@
       // prefer rematch -> new 10 min -> any "New" or "Play again" label
       const modal = document.querySelector('.game-over-modal-container') || document.querySelector('.board-modal-component.game-over-modal-container') || document.querySelector('.game-over-modal') || document.querySelector('.game-over');
       const containerCandidates = [modal, document];
-      const preferredTexts = ['rematch', 'rematch', 'play again', 'new 10 min', 'new 5 min', 'new 3 min', 'new game', 'new 15 min', 'play again', 'new'];
-      for (const c of containerCandidates) {
-        if (!c) continue;
-        // first try Rematch specifically
-        let btn = findButtonByTexts(c, ['Rematch', 'rematch']);
-        if (!btn) btn = findButtonByTexts(c, ['New 10 min', 'New 5 min', 'New 3 min', 'New game', 'New']);
-        if (!btn) btn = findButtonByTexts(c, preferredTexts);
-        if (btn) {
-          try {
-            // if it's inside a span, get closest clickable
-            const clickable = btn.closest('button') || btn.closest('a') || btn;
-            console.log('[kwy] Clicking button to start new game:', (clickable && (clickable.textContent || clickable.getAttribute('aria-label'))));
-            clickable.click();
-            return true;
-          } catch (e) {
-            console.warn('[kwy] click attempt failed', e);
+      const preferredTexts = ['play again', 'new 10 min', 'new 5 min', 'new 3 min', 'new game', 'new 15 min', 'play again', 'new'];
+      setTimeout(() => {
+          for (const c of containerCandidates) {
+              if (!c) continue;
+              // first try Rematch specifically
+              let btn = findButtonByTexts(c, []);
+              if (!btn) btn = findButtonByTexts(c, ['New 10 min', 'New 5 min', 'New 3 min', 'New game', 'New']);
+              if (!btn) btn = findButtonByTexts(c, preferredTexts);
+              if (btn) {
+                  try {
+                      // if it's inside a span, get closest clickable
+                      const clickable = btn.closest('button') || btn.closest('a') || btn;
+                      console.log('[kwy] Clicking button to start new game:', (clickable && (clickable.textContent || clickable.getAttribute('aria-label'))));
+                      clickable.click();
+                      return true;
+                  } catch (e) {
+                      console.warn('[kwy] click attempt failed', e);
+                  }
+              }
           }
-        }
-      }
-      // fallback: try to click header-close then try UI new game buttons
-      const headerClose = document.querySelector('.board-modal-header-close') || document.querySelector('.game-over .cc-close-button-component') || null;
-      if (headerClose) {
-        try { headerClose.click(); } catch(e){}
-      }
-      // try normal new-game buttons outside modal
-      const btnOut = findButtonByTexts(document, ['New 10 min', 'New', 'Play again']);
-      if (btnOut) { try { btnOut.click(); return true;} catch(e){} }
-      console.log('[kwy] Não conseguiu encontrar botão de nova partida (Rematch/New).');
-      return false;
+          // fallback: try to click header-close then try UI new game buttons
+          const headerClose = document.querySelector('.board-modal-header-close') || document.querySelector('.game-over .cc-close-button-component') || null;
+          if (headerClose) {
+              try { headerClose.click(); } catch(e){}
+          }
+          // try normal new-game buttons outside modal
+          const btnOut = findButtonByTexts(document, ['New 10 min', 'New', 'Play again']);
+          if (btnOut) { try { btnOut.click(); return true;} catch(e){} }
+          console.log('[kwy] Não conseguiu encontrar botão de nova partida (Rematch/New).');
+          return false;
+      }, 2000)
     }
 
     // expose method for manual click from console
